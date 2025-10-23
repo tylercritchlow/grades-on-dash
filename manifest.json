@@ -1,0 +1,32 @@
+{
+  "manifest_version": 2,
+  "name": "Canvas Grades Dashboard",
+  "version": "1.0.2",
+  "description": "Display grades for all courses on Canvas dashboard",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "https://*.instructure.com/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.instructure.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "Canvas Grades Settings"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{bd530868-3df5-4dd0-aa22-2fe2e2b54e45}"
+    }
+  }
+}

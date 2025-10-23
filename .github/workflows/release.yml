@@ -1,0 +1,160 @@
+name: Build and Release Extension
+
+on:
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Get full history for version checking
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install web-ext
+      run: npm install -g web-ext
+      
+    - name: Get latest release info
+      id: release-info
+      run: |
+        # Get the latest release tag
+        LATEST_RELEASE=$(gh release view --json tagName --jq '.tagName' 2>/dev/null || echo "v1.0.0")
+        echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+        
+        # Check if there are new commits since last release
+        if [ "$LATEST_RELEASE" != "v1.0.0" ]; then
+          COMMITS_SINCE=$(git rev-list --count $LATEST_RELEASE..HEAD)
+          echo "commits_since=$COMMITS_SINCE" >> $GITHUB_OUTPUT
+        else
+          COMMITS_SINCE=$(git rev-list --count HEAD)
+          echo "commits_since=$COMMITS_SINCE" >> $GITHUB_OUTPUT
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Check if we should create a release
+      id: should-release
+      run: |
+        if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ steps.release-info.outputs.commits_since }}" -eq 0 ]; then
+          echo "should_release=false" >> $GITHUB_OUTPUT
+          echo "No new commits since last release, skipping"
+        else
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "New commits found or manual trigger, proceeding with release"
+        fi
+        
+    - name: Update version number
+      if: steps.should-release.outputs.should_release == 'true'
+      id: version
+      run: |
+        # Get current version
+        CURRENT_VERSION=$(node -p "require('./manifest.json').version")
+        
+        # Define existing versions to skip
+        EXCEPTIONS=("1.0.1" "1.0.2" "1.0.3")
+        
+        # Generate new version based on date and commit count (semantic versioning)
+        DATE=$(date +%Y%m%d)
+        COMMIT_COUNT=$(git rev-list --count HEAD)
+        # Use format: 1.0.patch where patch is incremental
+        PATCH_VERSION=$((COMMIT_COUNT % 999999))
+        NEW_VERSION="1.0.${PATCH_VERSION}"
+        
+        # Skip existing versions
+        while [[ " ${EXCEPTIONS[@]} " =~ " ${NEW_VERSION} " ]]; do
+          PATCH_VERSION=$((PATCH_VERSION + 1))
+          NEW_VERSION="1.0.${PATCH_VERSION}"
+        done
+        
+        # Update manifest.json
+        jq --arg version "$NEW_VERSION" '.version = $version' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
+        
+        echo "old_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "Updated version from $CURRENT_VERSION to $NEW_VERSION"
+        
+    - name: Build and sign extension
+      if: steps.should-release.outputs.should_release == 'true'
+      run: |
+        web-ext sign \
+          --api-key=${{ secrets.AMO_JWT_ISSUER }} \
+          --api-secret=${{ secrets.AMO_JWT_SECRET }} \
+          --channel=unlisted \
+          --source-dir=. \
+          --artifacts-dir=dist
+          
+    - name: Find signed file
+      if: steps.should-release.outputs.should_release == 'true'
+      id: find-file
+      run: |
+        SIGNED_FILE=$(find dist -name "*.xpi" | head -n 1)
+        echo "signed_file=$SIGNED_FILE" >> $GITHUB_OUTPUT
+        echo "Found signed file: $SIGNED_FILE"
+        
+    - name: Generate release notes
+      if: steps.should-release.outputs.should_release == 'true'
+      id: release-notes
+      run: |
+        # Get commits since last release
+        LAST_TAG="${{ steps.release-info.outputs.latest_release }}"
+        if [ "$LAST_TAG" = "v1.0.0" ]; then
+          # First release, get all commits
+          COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse)
+        else
+          COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse $LAST_TAG..HEAD)
+        fi
+        
+        # Create release notes
+        cat > release_notes.md << EOF
+        # Canvas Grades Dashboard v${{ steps.version.outputs.new_version }}
+        
+        ## Installation
+        1. Download the \`.xpi\` file below
+        2. Open Firefox and go to \`about:addons\`
+        3. Click the gear icon ⚙️ → "Install Add-on From File..."
+        4. Select the downloaded \`.xpi\` file
+        
+        ## Changes
+        $COMMITS
+        
+        ---
+        **Auto-generated release from GitHub Actions**
+        EOF
+        
+        echo "release_notes_file=release_notes.md" >> $GITHUB_OUTPUT
+        
+    - name: Create GitHub Release
+      if: steps.should-release.outputs.should_release == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.version.outputs.new_version }}
+        name: Canvas Grades Dashboard v${{ steps.version.outputs.new_version }}
+        body_path: ${{ steps.release-notes.outputs.release_notes_file }}
+        files: ${{ steps.find-file.outputs.signed_file }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Upload build artifacts
+      if: steps.should-release.outputs.should_release == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: extension-build
+        path: dist/
+        retention-days: 30

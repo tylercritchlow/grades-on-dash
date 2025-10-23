@@ -1,0 +1,50 @@
+#grades-table {
+  margin: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  max-width: 300px;
+}
+
+.grades-header {
+  font-weight: 600;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  border-radius: 6px 6px 0 0;
+  font-size: 13px;
+  color: #495057;
+}
+
+.grades-list {
+  padding: 4px 0;
+}
+
+.grade-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.course-name {
+  flex: 1;
+  margin-right: 8px;
+  color: #495057;
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grade-percent {
+  font-weight: 600;
+  color: #007bff;
+  font-size: 12px;
+  min-width: 35px;
+  text-align: right;
+}
