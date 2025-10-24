@@ -64,7 +64,7 @@ jobs:
         CURRENT_VERSION=$(node -p "require('./manifest.json').version")
         
         # Define existing versions to skip
-        EXCEPTIONS=("1.0.1" "1.0.2" "1.0.3")
+        EXCEPTIONS=("1.0.1" "1.0.2" "1.0.3", "1.0.4")
         
         # Generate new version based on date and commit count (semantic versioning)
         DATE=$(date +%Y%m%d)
